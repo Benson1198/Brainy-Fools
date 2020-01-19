@@ -1,0 +1,72 @@
+#include "HX711.h"
+#include <dummy.h>
+#define DOUT  D3
+#define CLK  D5
+#include <ESP8266WiFi.h>
+#include <WiFiClient.h>;// Libraries for ThingSpeak Servers
+#include <ThingSpeak.h>;
+volatile unsigned int drop;
+const int drops_per_litre = 450;
+int pin = D4;
+
+WiFiClient client;
+unsigned long myChannelNumber =963282; //Your Channel Number
+const char * myWriteAPIKey = "0Z2YJW23A7SVDAJ7";
+
+const char *ssid =  "XT";     // replace with your wifi ssid and wpa2 key
+const char *pass =  "12345678";
+
+HX711 scale;
+
+int calibration_factor = -101426; //-7050 worked for my 440lb max scale setup
+
+void setup() {
+  pinMode(pin, INPUT);
+  attachInterrupt(digitalPinToInterrupt(D4),count_drop, CHANGE);
+ 
+  WiFi.begin(ssid, pass);
+ 
+  Serial.begin(9600);
+  Serial.println("HX711 calibration sketch");
+  Serial.println("Remove all weight from scale");
+  Serial.println("After readings begin, place known weight on scale");
+  Serial.println("Press + or a to increase calibration factor");
+  Serial.println("Press - or z to decrease calibration factor");
+ 
+  scale.begin(DOUT, CLK);
+  scale.set_scale();
+  scale.tare(); //Reset the scale to 0
+ 
+  long zero_factor = scale.read_average(); //Get a baseline reading
+  Serial.print("Zero factor: "); //This can be used to remove the need to tare the scale. Useful in permanent scale projects.
+  Serial.println(zero_factor);
+
+  ThingSpeak.begin(client);
+  Blynk.begin(auth, ssid, password);
+  pinMode(relay1,OUTPUT);
+  pinMode(relay2,OUTPUT);
+  pinMode(relay3,OUTPUT);
+ 
+}
+void loop() {
+  scale.set_scale(calibration_factor); //Adjust to this calibration factor
+  Serial.print("Reading: ");
+ // Serial.print(scale.get_units(), 3);
+  float val = (scale.get_units()*0.454)/1.029;
+  Serial.print(val);
+  Serial.println(" Lit");
+drop=0;
+interrupts();
+delay(1000);
+noInterrupts();
+ 
+Serial.print("Drops per second: ");
+int d = drop/2;
+Serial.println(drop/2);
+ThingSpeak.writeField(myChannelNumber, 1, val, myWriteAPIKey);
+ThingSpeak.writeField(myChannelNumber, 2, d, myWriteAPIKey);
+}
+void count_drop()
+{
+drop++;
+}
